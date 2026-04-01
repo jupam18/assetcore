@@ -1,0 +1,320 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ─────────────────────────────────
+
+enum UserRole {
+  GLOBAL_ADMIN
+  COUNTRY_LEAD
+  TECHNICIAN
+}
+
+enum AssetStatus {
+  IN_STOCK
+  DEPLOYED
+  IN_MAINTENANCE
+  PENDING_RETURN
+  LEGAL_HOLD
+  RETIRED
+  DISPOSED
+}
+
+enum AssetCondition {
+  NEW
+  GOOD
+  FAIR
+  DAMAGED
+  FOR_PARTS
+}
+
+enum ShippingStatus {
+  PENDING_PICKUP
+  IN_TRANSIT
+  AT_CUSTOMS
+  DELIVERED
+  LOST
+}
+
+enum NoteCategory {
+  GENERAL
+  MAINTENANCE
+  INCIDENT
+  TRANSFER
+  PROCUREMENT
+}
+
+enum NoteVisibility {
+  ALL_USERS
+  COUNTRY_LEADS_ONLY
+  ADMINS_ONLY
+}
+
+enum LocationType {
+  COUNTRY
+  OFFICE
+  ROOM
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  ASSIGNMENT
+  TRANSFER
+  WORKFLOW_TRANSITION
+}
+
+// ─── LOOKUP LISTS (Admin-managed dropdowns) ───
+
+model LookupList {
+  id          String        @id @default(cuid())
+  name        String        @unique // 'make', 'model', 'ram', etc.
+  label       String // 'Manufacturer', 'Model', 'RAM'
+  description String?
+  isSystem    Boolean       @default(false)
+  values      LookupValue[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model LookupValue {
+  id            String     @id @default(cuid())
+  listId        String
+  list          LookupList @relation(fields: [listId], references: [id])
+  value         String
+  label         String?
+  sortOrder     Int        @default(0)
+  isActive      Boolean    @default(true)
+  parentValueId String? // For cascading (Model filtered by Make)
+  metadata      Json?
+  createdAt     DateTime   @default(now())
+
+  @@unique([listId, value])
+  @@index([listId, isActive, sortOrder])
+}
+
+// ─── IDENTITY ──────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  hashedPassword String
+  role           UserRole  @default(TECHNICIAN)
+  isActive       Boolean   @default(true)
+  lastLogin      DateTime?
+  country        Location? @relation(fields: [countryId], references: [id])
+  countryId      String?
+  permissions    Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  assignments       Assignment[] @relation("AssignedBy")
+  assignedAssets    Assignment[] @relation("AssignedTo")
+  notes             AssetNote[]
+  auditLogs         AuditLog[]
+  receivedShipments Shipment[]   @relation("ReceivedBy")
+}
+
+// ─── LOCATIONS ─────────────────────────────
+
+model Location {
+  id        String       @id @default(cuid())
+  name      String
+  type      LocationType
+  address   String?
+  timezone  String?
+  parentId  String?
+  parent    Location?    @relation("LocationTree", fields: [parentId], references: [id])
+  children  Location[]   @relation("LocationTree")
+  assets    Asset[]
+  users     User[]
+  createdAt DateTime     @default(now())
+}
+
+// ─── ASSET TYPES ───────────────────────────
+
+model AssetType {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  icon              String?
+  fieldSchema       Json?
+  defaultWorkflowId String?
+  assets            Asset[]
+  createdAt         DateTime @default(now())
+}
+
+// ─── ASSETS (CORE) ─────────────────────────
+
+model Asset {
+  id           String         @id @default(cuid())
+  serialNumber String         @unique
+  assetTag     String? // Manual free text - NOT auto-generated
+  deviceName   String?
+  typeId       String
+  type         AssetType      @relation(fields: [typeId], references: [id])
+  manufacturer String // From Lookup List: 'make'
+  model        String // From Lookup List: 'model'
+  status       AssetStatus    @default(IN_STOCK)
+  condition    AssetCondition @default(NEW)
+
+  // Hardware specs (from Lookup Lists)
+  os        String?
+  processor String? // From Lookup List: 'processor'
+  ram       String? // From Lookup List: 'ram'
+  storage   String? // From Lookup List: 'storage'
+
+  // Financial
+  purchaseDate   DateTime?
+  purchasePrice  Decimal?  @db.Decimal(10, 2)
+  warrantyExpiry DateTime?
+
+  // Location
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  // Deployment tracking (auto-set by workflow transitions)
+  deployedDate DateTime? // Auto-set when status -> DEPLOYED
+  returnDate   DateTime? // Auto-set when status -> IN_STOCK
+
+  // Workflow state
+  currentStatus      String  @default("in_stock")
+  workflowInstanceId String?
+  previousStatus     String? // Used for Legal Hold restore
+
+  // Custom fields (JSONB)
+  customFields Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments Assignment[]
+  shipments   Shipment[]
+  notes       AssetNote[]
+  auditLogs   AuditLog[]
+}
+
+// ─── ASSIGNMENTS ───────────────────────────
+
+model Assignment {
+  id           String    @id @default(cuid())
+  assetId      String
+  asset        Asset     @relation(fields: [assetId], references: [id])
+  assignedToId String
+  assignedTo   User      @relation("AssignedTo", fields: [assignedToId], references: [id])
+  assignedById String
+  assignedBy   User      @relation("AssignedBy", fields: [assignedById], references: [id])
+  deployedDate DateTime  @default(now())
+  returnDate   DateTime?
+  notes        String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+}
+
+// ─── SHIPMENTS ─────────────────────────────
+
+model Shipment {
+  id               String         @id @default(cuid())
+  assetId          String
+  asset            Asset          @relation(fields: [assetId], references: [id])
+  trackingNumber   String?
+  carrier          String? // From Lookup List: 'carrier'
+  shippingStatus   ShippingStatus @default(PENDING_PICKUP)
+  originLocation   String?
+  destLocation     String?
+  shipmentDate     DateTime?
+  expectedDelivery DateTime?
+  receivedDate     DateTime?
+  receivedById     String?
+  receivedBy       User?          @relation("ReceivedBy", fields: [receivedById], references: [id])
+  poNumber         String?
+  invoiceNumber    String?
+  customsRef       String?
+  insuranceClaim   String?
+  transferNotes    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+// ─── NOTES ─────────────────────────────────
+
+model AssetNote {
+  id         String         @id @default(cuid())
+  assetId    String
+  asset      Asset          @relation(fields: [assetId], references: [id])
+  authorId   String
+  author     User           @relation(fields: [authorId], references: [id])
+  text       String
+  category   NoteCategory   @default(GENERAL)
+  visibility NoteVisibility @default(ALL_USERS)
+  isPinned   Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  // No updatedAt - notes are append-only
+}
+
+// ─── AUDIT LOG ─────────────────────────────
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  entityType    String
+  entityId      String
+  action        AuditAction
+  fieldChanges  Json?
+  performedById String?
+  performedBy   User?       @relation(fields: [performedById], references: [id])
+  ipAddress     String?
+  notes         String?
+  createdAt     DateTime    @default(now())
+  asset         Asset?      @relation(fields: [assetId], references: [id])
+  assetId       String?
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([performedById])
+}
+
+// ─── WORKFLOWS ─────────────────────────────
+
+model Workflow {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  assetTypeId String?
+  states      Json // [{ name, color, type, description }]
+  transitions Json // [{ from, to, name, roles, autoActions }]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WorkflowInstance {
+  id           String   @id @default(cuid())
+  workflowId   String
+  assetId      String   @unique
+  currentState String
+  history      Json // [{ state, timestamp, triggeredBy, notes }]
+  metadata     Json? // { previousState } for Legal Hold
+  startedById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── SYSTEM SETTINGS ───────────────────────
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique // 'app_name', 'session_timeout', etc.
+  value     String
+  type      String   @default("string") // string, number, boolean, json
+  label     String
+  group     String   @default("general") // general, auth, email, etc.
+  updatedAt DateTime @updatedAt
+}
