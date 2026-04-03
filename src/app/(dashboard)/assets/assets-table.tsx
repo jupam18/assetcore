@@ -1,53 +1,35 @@
 "use client";
 
-import { AssetStatus } from "@prisma/client";
-import Link from "next/link";
+import { AssetRow, COLUMN_MAP, DEFAULT_COLUMNS } from "@/lib/column-definitions";
+import { STATUS_LABELS } from "@/lib/workflow";
+import { Download, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useTransition } from "react";
-import { STATUS_COLORS, STATUS_LABELS } from "@/lib/workflow";
-
-type Asset = {
-  id: string;
-  serialNumber: string;
-  assetTag: string | null;
-  deviceName: string | null;
-  status: AssetStatus;
-  condition: string;
-  manufacturer: string;
-  model: string;
-  type: { name: string };
-  location: { name: string; parent: { name: string } | null } | null;
-  assignments: { assignedTo: { name: string } }[];
-};
+import { useCallback, useState, useTransition } from "react";
+import { ViewBar } from "./view-bar";
 
 const CONDITION_LABELS: Record<string, string> = {
-  NEW: "New",
-  GOOD: "Good",
-  FAIR: "Fair",
-  DAMAGED: "Damaged",
-  FOR_PARTS: "For Parts",
+  NEW: "New", GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged", FOR_PARTS: "For Parts",
 };
 
 export function AssetsTable({
-  assets,
-  total,
-  page,
-  limit,
-  query,
-  statusFilter,
-  assetTypes: _assetTypes,
+  assets, total, page, limit, query, statusFilter, conditionFilter, typeIdFilter, assetTypes, userRole, userId,
 }: {
-  assets: Asset[];
+  assets: AssetRow[];
   total: number;
   page: number;
   limit: number;
   query: string;
   statusFilter: string;
+  conditionFilter: string;
+  typeIdFilter: string;
   assetTypes: { id: string; name: string }[];
+  userRole: string;
+  userId: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
+  const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
 
   const updateParam = useCallback(
     (key: string, value: string) => {
@@ -61,99 +43,85 @@ export function AssetsTable({
   );
 
   const pages = Math.ceil(total / limit);
+  const activeCols = columns.map((k) => COLUMN_MAP[k]).filter(Boolean);
+
+  const exportBase = `/api/assets/export?${query ? `q=${encodeURIComponent(query)}&` : ""}${statusFilter ? `status=${statusFilter}&` : ""}${conditionFilter ? `condition=${conditionFilter}&` : ""}${typeIdFilter ? `typeId=${typeIdFilter}&` : ""}`;
+
+  const selectClass = "rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-300/20 transition-all appearance-none cursor-pointer";
 
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <input
-          type="search"
-          placeholder="Search serial, tag, device name…"
-          defaultValue={query}
-          onChange={(e) => updateParam("q", e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-72"
-        />
-        <select
-          value={statusFilter}
-          onChange={(e) => updateParam("status", e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-        >
+      <div className="flex gap-2.5 flex-wrap items-center">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+          <input
+            type="search"
+            placeholder="Search assets..."
+            defaultValue={query}
+            onChange={(e) => updateParam("q", e.target.value)}
+            className="rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-300/20 w-64 transition-all"
+          />
+        </div>
+        <select value={statusFilter} onChange={(e) => updateParam("status", e.target.value)} className={selectClass}>
           <option value="">All statuses</option>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
+          {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
+        <select value={conditionFilter} onChange={(e) => updateParam("condition", e.target.value)} className={selectClass}>
+          <option value="">All conditions</option>
+          {Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <select value={typeIdFilter} onChange={(e) => updateParam("typeId", e.target.value)} className={selectClass}>
+          <option value="">All types</option>
+          {assetTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{total.toLocaleString()} results</span>
+          <a href={`${exportBase}format=xlsx`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors">
+            <Download className="w-3.5 h-3.5" /> XLSX
+          </a>
+          <a href={`${exportBase}format=csv`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-foreground hover:bg-secondary transition-colors">
+            <Download className="w-3.5 h-3.5" /> CSV
+          </a>
+        </div>
       </div>
 
+      {/* View bar */}
+      <ViewBar columns={columns} onColumnsChange={setColumns} userRole={userRole} userId={userId} />
+
       {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className={`rounded-xl border border-border bg-card overflow-x-auto shadow-sm transition-opacity duration-200 ${isPending ? "opacity-60" : ""}`}>
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Serial Number</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Asset Tag</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Device / Model</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Assigned To</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Location</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Condition</th>
+          <thead>
+            <tr className="border-b border-border">
+              {activeCols.map((col) => (
+                <th key={col.key} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap bg-muted/30">
+                  {col.label}
+                </th>
+              ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody>
             {assets.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
-                  No assets found.
+                <td colSpan={activeCols.length || 1} className="px-4 py-16 text-center text-muted-foreground">
+                  <div className="space-y-1">
+                    <p className="text-base font-medium">No assets found</p>
+                    <p className="text-sm">Try adjusting your search or filters</p>
+                  </div>
                 </td>
               </tr>
             )}
-            {assets.map((asset) => (
-              <tr key={asset.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/assets/${asset.id}`}
-                    className="font-mono text-blue-600 hover:underline font-medium"
-                  >
-                    {asset.serialNumber}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-gray-600 font-mono text-xs">
-                  {asset.assetTag ?? "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="font-medium text-gray-900">
-                    {asset.deviceName ?? `${asset.manufacturer} ${asset.model}`}
-                  </div>
-                  {asset.deviceName && (
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {asset.manufacturer} {asset.model}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-gray-600">{asset.type.name}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[asset.status]}`}
-                  >
-                    {STATUS_LABELS[asset.status]}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {asset.assignments[0]?.assignedTo.name ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-gray-600 text-xs">
-                  {asset.location
-                    ? asset.location.parent
-                      ? `${asset.location.parent.name} / ${asset.location.name}`
-                      : asset.location.name
-                    : "—"}
-                </td>
-                <td className="px-4 py-3 text-gray-600 text-xs">
-                  {CONDITION_LABELS[asset.condition] ?? asset.condition}
-                </td>
+            {assets.map((asset, i) => (
+              <tr key={asset.id} className={`transition-colors hover:bg-brand-50/50 ${i !== assets.length - 1 ? "border-b border-border/50" : ""}`}>
+                {activeCols.map((col) => (
+                  <td key={col.key} className={`px-4 py-3 ${col.className ?? ""}`}>
+                    {col.render(asset)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -162,22 +130,22 @@ export function AssetsTable({
 
       {/* Pagination */}
       {pages > 1 && (
-        <div className="flex items-center justify-between text-sm text-gray-600">
-          <span>
-            {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total.toLocaleString()}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Showing {(page - 1) * limit + 1}&ndash;{Math.min(page * limit, total)} of {total.toLocaleString()}
           </span>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             <button
               disabled={page <= 1}
               onClick={() => updateParam("page", String(page - 1))}
-              className="px-3 py-1 rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+              className="px-3.5 py-1.5 rounded-lg border border-border bg-card text-foreground text-sm font-medium disabled:opacity-30 hover:bg-secondary transition-colors"
             >
               Previous
             </button>
             <button
               disabled={page >= pages}
               onClick={() => updateParam("page", String(page + 1))}
-              className="px-3 py-1 rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+              className="px-3.5 py-1.5 rounded-lg border border-border bg-card text-foreground text-sm font-medium disabled:opacity-30 hover:bg-secondary transition-colors"
             >
               Next
             </button>

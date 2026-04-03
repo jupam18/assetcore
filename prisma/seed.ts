@@ -305,6 +305,12 @@ async function main() {
     { key: "session_timeout", value: "480", label: "Session Timeout (minutes)", type: "number", group: "auth" },
     { key: "default_timezone", value: "UTC", label: "Default Timezone", type: "string", group: "general" },
     { key: "warranty_alert_days", value: "90", label: "Warranty Alert Days", type: "number", group: "general" },
+    { key: "smtp_host", value: "", label: "SMTP Host", type: "string", group: "email" },
+    { key: "smtp_port", value: "587", label: "SMTP Port", type: "number", group: "email" },
+    { key: "smtp_secure", value: "false", label: "SMTP Secure (TLS)", type: "boolean", group: "email" },
+    { key: "smtp_user", value: "", label: "SMTP Username", type: "string", group: "email" },
+    { key: "smtp_pass", value: "", label: "SMTP Password", type: "string", group: "email" },
+    { key: "smtp_from", value: "", label: "From Address", type: "string", group: "email" },
   ];
 
   for (const setting of settings) {
@@ -316,6 +322,132 @@ async function main() {
   }
 
   console.log("  System settings created");
+
+  // ── Role Templates ────────────────────────────────────────────────────────────
+
+  const roleTemplates = [
+    {
+      id: "role-global-admin",
+      name: "Global Admin",
+      description: "Full unrestricted access across all countries and admin functions",
+      isSystem: true,
+      permissions: {
+        assets: { view: true, create: true, edit: true, delete: true, changeStatus: true, export: true, import: true },
+        admin: { users: true, lookups: true, workflows: true, settings: true, audit: true, roles: true },
+        scope: "all" as const,
+      },
+    },
+    {
+      id: "role-country-lead",
+      name: "Country Lead",
+      description: "Full asset management within their assigned country",
+      isSystem: true,
+      permissions: {
+        assets: { view: true, create: true, edit: true, delete: false, changeStatus: true, export: true, import: true },
+        admin: { users: false, lookups: false, workflows: false, settings: false, audit: true, roles: false },
+        scope: "own_country" as const,
+      },
+    },
+    {
+      id: "role-technician",
+      name: "Technician",
+      description: "Day-to-day asset operations within their assigned country",
+      isSystem: true,
+      permissions: {
+        assets: { view: true, create: true, edit: true, delete: false, changeStatus: true, export: true, import: false },
+        admin: { users: false, lookups: false, workflows: false, settings: false, audit: false, roles: false },
+        scope: "own_country" as const,
+      },
+    },
+  ];
+
+  for (const rt of roleTemplates) {
+    await prisma.roleTemplate.upsert({
+      where: { id: rt.id },
+      update: {},
+      create: rt,
+    });
+  }
+
+  console.log("  Role templates created");
+
+  // ── Notification Rules ──────────────────────────────────────────────────────
+
+  const WRAP_HTML = (inner: string) =>
+    `<div style="font-family:system-ui,sans-serif;color:#111827;max-width:600px;margin:0 auto"><div style="background:#004346;padding:20px 24px;border-radius:12px 12px 0 0"><span style="font-size:18px;font-weight:700;color:#fff">AssetCore</span></div><div style="padding:24px;background:#fff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px">${inner}</div></div>`;
+
+  const notificationRules = [
+    {
+      id: "notif-deploy",
+      name: "Asset Deployed — Notify Assignee",
+      description: "Sends an email to the user an asset is being deployed to",
+      trigger: "status_change",
+      conditions: { toStatus: ["DEPLOYED"] },
+      recipients: { type: "assignee" },
+      subject: "AssetCore — Asset deployed to you: {{asset.serialNumber}}",
+      bodyHtml: WRAP_HTML(`<h2 style="margin:0 0 4px;font-size:17px">Asset Assigned to You</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px">An IT asset has been deployed and assigned to your account.</p><div style="background:#f0faf9;border:1px solid #79d9c340;border-radius:10px;padding:16px 20px;margin-bottom:20px"><p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#004346">{{asset.deviceName}}</p><p style="margin:0;font-size:12px;color:#6b7280">Serial: <span style="font-family:monospace;color:#111827">{{asset.serialNumber}}</span></p><p style="margin:4px 0 0;font-size:12px;color:#6b7280">Model: {{asset.model}}</p></div><p style="font-size:13px;color:#374151;margin:0 0 20px">Assigned by <strong>{{performer.name}}</strong>.</p><a href="{{appUrl}}/assets" style="display:inline-block;background:#004346;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600">View in AssetCore →</a>`),
+      isActive: true,
+      isSystem: true,
+    },
+    {
+      id: "notif-legal-hold",
+      name: "Legal Hold — Notify Admins",
+      description: "Alerts all Global Admins when an asset is placed on legal hold",
+      trigger: "status_change",
+      conditions: { toStatus: ["LEGAL_HOLD"] },
+      recipients: { type: "role", role: "GLOBAL_ADMIN" },
+      subject: "AssetCore — ⚠ Legal Hold placed on: {{asset.serialNumber}}",
+      bodyHtml: WRAP_HTML(`<h2 style="margin:0 0 4px;font-size:17px;color:#dc2626">⚠ Legal Hold Placed</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px">An asset has been placed on legal hold.</p><div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px 20px;margin-bottom:20px"><p style="margin:0 0 6px;font-size:13px;font-weight:600">{{asset.deviceName}}</p><p style="margin:0;font-size:12px;color:#6b7280">Serial: <span style="font-family:monospace;color:#111827">{{asset.serialNumber}}</span></p>{{#if notes}}<p style="margin:10px 0 0;font-size:12px;color:#6b7280;font-style:italic">"{{notes}}"</p>{{/if}}</div><p style="font-size:13px;color:#374151;margin:0 0 20px">Placed by <strong>{{performer.name}}</strong>.</p><a href="{{appUrl}}/assets" style="display:inline-block;background:#004346;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600">View in AssetCore →</a>`),
+      isActive: true,
+      isSystem: true,
+    },
+    {
+      id: "notif-maintenance",
+      name: "Maintenance / Retired / Disposed — Notify Country Lead",
+      description: "Notifies country leads when assets go to maintenance, retired, or disposed",
+      trigger: "status_change",
+      conditions: { toStatus: ["IN_MAINTENANCE", "RETIRED", "DISPOSED", "PENDING_RETURN"] },
+      recipients: { type: "country_leads" },
+      subject: "AssetCore — Asset status changed: {{asset.serialNumber}} → {{toStatus}}",
+      bodyHtml: WRAP_HTML(`<h2 style="margin:0 0 4px;font-size:17px">Asset Status Changed</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px">An asset in your country has changed status.</p><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px 20px;margin-bottom:20px"><p style="margin:0 0 8px;font-size:13px;font-weight:600">{{asset.deviceName}}</p><p style="margin:0;font-size:12px;color:#6b7280">Serial: <span style="font-family:monospace;color:#111827">{{asset.serialNumber}}</span></p><p style="margin:8px 0 0;font-size:12px;color:#6b7280">{{fromStatus}} → <strong>{{toStatus}}</strong></p>{{#if notes}}<p style="margin:10px 0 0;font-size:12px;color:#6b7280;font-style:italic">"{{notes}}"</p>{{/if}}</div><p style="font-size:13px;color:#374151;margin:0 0 20px">Changed by <strong>{{performer.name}}</strong>.</p><a href="{{appUrl}}/assets" style="display:inline-block;background:#004346;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600">View in AssetCore →</a>`),
+      isActive: true,
+      isSystem: true,
+    },
+    {
+      id: "notif-warranty",
+      name: "Warranty Expiry Alert — Notify Admins",
+      description: "Daily cron: warns Global Admins about assets with warranties expiring within configured days",
+      trigger: "warranty_expiry",
+      conditions: {},
+      recipients: { type: "role", role: "GLOBAL_ADMIN" },
+      subject: "AssetCore — {{count}} warranty(ies) expiring within {{days}} days",
+      bodyHtml: WRAP_HTML(`<h2 style="margin:0 0 4px;font-size:17px">Warranty Expiry Alert</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px">{{count}} asset(s) have warranties expiring within {{days}} days.</p>{{warrantyTable}}<a href="{{appUrl}}/assets" style="display:inline-block;background:#004346;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;margin-top:20px">View in AssetCore →</a>`),
+      isActive: true,
+      isSystem: true,
+    },
+    {
+      id: "notif-asset-created",
+      name: "Asset Created — Notify Country Lead",
+      description: "Notifies country leads when a new asset is created in their country",
+      trigger: "asset_created",
+      conditions: {},
+      recipients: { type: "country_leads" },
+      subject: "AssetCore — New asset created: {{asset.serialNumber}}",
+      bodyHtml: WRAP_HTML(`<h2 style="margin:0 0 4px;font-size:17px">New Asset Created</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px">A new asset has been registered in your country.</p><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px 20px;margin-bottom:20px"><p style="margin:0 0 6px;font-size:13px;font-weight:600">{{asset.deviceName}}</p><p style="margin:0;font-size:12px;color:#6b7280">Serial: <span style="font-family:monospace;color:#111827">{{asset.serialNumber}}</span></p><p style="margin:4px 0 0;font-size:12px;color:#6b7280">Type: {{asset.type}} · Model: {{asset.model}}</p></div><p style="font-size:13px;color:#374151;margin:0 0 20px">Created by <strong>{{performer.name}}</strong>.</p><a href="{{appUrl}}/assets" style="display:inline-block;background:#004346;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600">View in AssetCore →</a>`),
+      isActive: false,
+      isSystem: true,
+    },
+  ];
+
+  for (const rule of notificationRules) {
+    await prisma.notificationRule.upsert({
+      where: { id: rule.id },
+      update: {},
+      create: rule,
+    });
+  }
+
+  console.log("  Notification rules created");
 
   // ── Sample Assets ─────────────────────────────────────────────────────────────
 

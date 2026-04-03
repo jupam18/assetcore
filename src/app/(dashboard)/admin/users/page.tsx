@@ -53,8 +53,8 @@ export default async function AdminUsersPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">User Management</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">User Management</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             {total} user{total !== 1 ? "s" : ""}
           </p>
         </div>

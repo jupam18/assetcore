@@ -131,9 +131,9 @@ export function UsersTable({
                     {user.isActive ? "Active" : "Inactive"}
                   </Badge>
                 </td>
-                <td className="px-4 py-3 text-gray-500 text-xs">
+                <td className="px-4 py-3 text-muted-foreground text-xs">
                   {user.lastLogin
-                    ? new Date(user.lastLogin).toLocaleDateString()
+                    ? new Date(user.lastLogin).toISOString().slice(0, 10)
                     : "Never"}
                 </td>
                 <td className="px-4 py-3">

@@ -58,7 +58,7 @@ export function AuditTab({ assetId }: { assetId: string }) {
           {logs.map((log) => (
             <tr key={log.id}>
               <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                {new Date(log.createdAt).toLocaleString()}
+                {new Date(log.createdAt).toISOString().slice(0, 16).replace("T", " ")}
               </td>
               <td className="px-4 py-3">
                 <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${ACTION_COLORS[log.action] ?? "bg-gray-100 text-gray-600"}`}>

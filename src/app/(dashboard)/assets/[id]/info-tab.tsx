@@ -101,13 +101,13 @@ export function InfoTab({ asset, assetTypes, locations, users, makeValues, ramVa
             {asset.deployedDate && (
               <div>
                 <p className="text-xs text-gray-500 mb-1">Deployed Date</p>
-                <p className="text-sm text-gray-700">{new Date(asset.deployedDate).toLocaleDateString()}</p>
+                <p className="text-sm text-gray-700">{new Date(asset.deployedDate).toISOString().slice(0, 10)}</p>
               </div>
             )}
             {asset.returnDate && (
               <div>
                 <p className="text-xs text-gray-500 mb-1">Return Date</p>
-                <p className="text-sm text-gray-700">{new Date(asset.returnDate).toLocaleDateString()}</p>
+                <p className="text-sm text-gray-700">{new Date(asset.returnDate).toISOString().slice(0, 10)}</p>
               </div>
             )}
           </div>

@@ -29,7 +29,7 @@ export default async function AssetDetailPage({
     }),
     prisma.assetType.findMany({ orderBy: { name: "asc" } }),
     prisma.location.findMany({
-      where: { type: { in: ["OFFICE", "ROOM"] } },
+      where: { type: { in: ["OFFICE", "ROOM"] }, isActive: true },
       include: { parent: true },
       orderBy: { name: "asc" },
     }),

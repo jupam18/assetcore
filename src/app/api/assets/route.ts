@@ -2,6 +2,8 @@ import { auditLog } from "@/lib/audit";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createAssetSchema } from "@/lib/validations/asset";
+import { createWorkflowInstance, getDefaultWorkflow } from "@/lib/workflow-engine";
+import { fireNotifications } from "@/lib/notification-engine";
 import { getServerSession } from "next-auth";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -45,6 +47,16 @@ export async function GET(req: NextRequest) {
             { serialNumber: { contains: q, mode: "insensitive" as const } },
             { assetTag: { contains: q, mode: "insensitive" as const } },
             { deviceName: { contains: q, mode: "insensitive" as const } },
+            { manufacturer: { contains: q, mode: "insensitive" as const } },
+            { model: { contains: q, mode: "insensitive" as const } },
+            { processor: { contains: q, mode: "insensitive" as const } },
+            { ram: { contains: q, mode: "insensitive" as const } },
+            { storage: { contains: q, mode: "insensitive" as const } },
+            { os: { contains: q, mode: "insensitive" as const } },
+            { type: { name: { contains: q, mode: "insensitive" as const } } },
+            { location: { name: { contains: q, mode: "insensitive" as const } } },
+            { location: { parent: { name: { contains: q, mode: "insensitive" as const } } } },
+            { assignments: { some: { isActive: true, assignedTo: { name: { contains: q, mode: "insensitive" as const } } } } },
           ],
         }
       : {}),
@@ -128,6 +140,28 @@ export async function POST(req: NextRequest) {
     ipAddress: req.headers.get("x-forwarded-for") ?? undefined,
     notes: `Asset created: ${serialNumber}`,
   });
+
+  // Create WorkflowInstance for the default workflow
+  const defaultWorkflow = await getDefaultWorkflow();
+  if (defaultWorkflow) {
+    await createWorkflowInstance(asset.id, session.user.id, defaultWorkflow.id);
+  }
+
+  // Fire "asset_created" notifications (fire-and-forget)
+  fireNotifications({
+    trigger: "asset_created",
+    asset: {
+      id: asset.id,
+      serialNumber: asset.serialNumber,
+      model: asset.model,
+      assetTag: asset.assetTag,
+      deviceName: asset.deviceName,
+      typeName: rest.typeId, // Will be resolved by engine if needed
+      locationId: asset.locationId,
+    },
+    performedById: session.user.id,
+    performedByName: session.user.name ?? "A technician",
+  }).catch(() => null);
 
   return NextResponse.json({ success: true, data: asset }, { status: 201 });
 }

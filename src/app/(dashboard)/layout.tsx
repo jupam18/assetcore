@@ -12,10 +12,10 @@ export default async function DashboardLayout({
   if (!session) redirect("/login");
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar role={session.user.role} />
+    <div className="flex h-screen bg-background">
+      <Sidebar role={session.user.role} userName={session.user.name} />
       <main className="flex-1 overflow-y-auto">
-        <div className="p-6">{children}</div>
+        <div className="max-w-[1400px] mx-auto px-8 py-8">{children}</div>
       </main>
     </div>
   );

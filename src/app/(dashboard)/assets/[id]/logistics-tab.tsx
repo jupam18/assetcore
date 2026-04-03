@@ -178,7 +178,7 @@ export function LogisticsTab({
               <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
                 {s.trackingNumber && <span>📦 {s.trackingNumber}</span>}
                 {s.carrier && <span>🚚 {s.carrier}</span>}
-                {s.shipmentDate && <span>📅 {new Date(s.shipmentDate).toLocaleDateString()}</span>}
+                {s.shipmentDate && <span>📅 {new Date(s.shipmentDate).toISOString().slice(0, 10)}</span>}
               </div>
               {s.transferNotes && <p className="mt-2 text-xs text-gray-500">{s.transferNotes}</p>}
             </div>

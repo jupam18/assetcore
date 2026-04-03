@@ -188,7 +188,7 @@ export function NotesTab({
                 </span>
               )}
               <span>
-                {note.author?.name ?? "Unknown"} · {new Date(note.createdAt).toLocaleString()}
+                {note.author?.name ?? "Unknown"} · {new Date(note.createdAt).toISOString().slice(0, 16).replace("T", " ")}
               </span>
             </div>
           </div>

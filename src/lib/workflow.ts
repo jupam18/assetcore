@@ -43,13 +43,13 @@ export const STATUS_LABELS: Record<AssetStatus, string> = {
 };
 
 export const STATUS_COLORS: Record<AssetStatus, string> = {
-  IN_STOCK: "bg-gray-100 text-gray-700",
-  DEPLOYED: "bg-blue-100 text-blue-700",
-  IN_MAINTENANCE: "bg-yellow-100 text-yellow-700",
-  PENDING_RETURN: "bg-purple-100 text-purple-700",
-  LEGAL_HOLD: "bg-red-100 text-red-700",
-  RETIRED: "bg-gray-200 text-gray-600",
-  DISPOSED: "bg-gray-300 text-gray-500",
+  IN_STOCK: "bg-muted text-muted-foreground",
+  DEPLOYED: "bg-brand-100 text-brand-800",
+  IN_MAINTENANCE: "bg-amber-50 text-amber-700 border border-amber-200/60",
+  PENDING_RETURN: "bg-purple-50 text-purple-700 border border-purple-200/60",
+  LEGAL_HOLD: "bg-red-50 text-red-700 border border-red-200/60",
+  RETIRED: "bg-muted text-muted-foreground/70",
+  DISPOSED: "bg-muted text-muted-foreground/50",
 };
 
 export const TRANSITION_LABELS: Partial<Record<string, string>> = {
