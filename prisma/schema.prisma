@@ -113,15 +113,19 @@ model User {
   lastLogin      DateTime?
   country        Location? @relation(fields: [countryId], references: [id])
   countryId      String?
-  permissions    Json?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  permissions      Json?
+  roleTemplateId   String?
+  roleTemplate     RoleTemplate? @relation(fields: [roleTemplateId], references: [id])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  assignments       Assignment[] @relation("AssignedBy")
-  assignedAssets    Assignment[] @relation("AssignedTo")
+  assignments       Assignment[]    @relation("AssignedBy")
+  assignedAssets    Assignment[]    @relation("AssignedTo")
   notes             AssetNote[]
   auditLogs         AuditLog[]
-  receivedShipments Shipment[]   @relation("ReceivedBy")
+  receivedShipments Shipment[]      @relation("ReceivedBy")
+  assetViews        AssetView[]     @relation("AssetViewCreator")
+  dashboardViews    DashboardView[] @relation("DashboardViewCreator")
 }
 
 // ─── LOCATIONS ─────────────────────────────
@@ -132,6 +136,7 @@ model Location {
   type      LocationType
   address   String?
   timezone  String?
+  isActive  Boolean      @default(true)
   parentId  String?
   parent    Location?    @relation("LocationTree", fields: [parentId], references: [id])
   children  Location[]   @relation("LocationTree")
@@ -317,4 +322,79 @@ model SystemSetting {
   label     String
   group     String   @default("general") // general, auth, email, etc.
   updatedAt DateTime @updatedAt
+}
+
+// ─── ROLE TEMPLATES ────────────────────────
+
+model RoleTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions Json     // { assets: {...}, admin: {...}, scope: "own_country"|"all" }
+  isSystem    Boolean  @default(false) // built-in roles cannot be deleted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+}
+
+// ─── ASSET VIEWS ───────────────────────────
+
+model AssetView {
+  id          String    @id @default(cuid())
+  name        String
+  columns     Json      // string[] — ordered column keys
+  isDefault   Boolean   @default(false) // true = visible to all users
+  createdById String?
+  createdBy   User?     @relation("AssetViewCreator", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── DASHBOARD VIEWS ────────────────────────
+
+model DashboardView {
+  id          String    @id @default(cuid())
+  name        String
+  widgets     Json      // string[] — ordered widget keys
+  isDefault   Boolean   @default(false) // true = visible to all users
+  createdById String?
+  createdBy   User?     @relation("DashboardViewCreator", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── NOTIFICATION RULES ─────────────────────
+
+model NotificationRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  trigger     String   // "status_change" | "assignment" | "legal_hold" | "warranty_expiry" | "asset_created" | "note_added"
+  conditions  Json?    // e.g. { fromStatus: [...], toStatus: [...] }
+  recipients  Json     // e.g. { type: "assignee" } | { type: "role", role: "GLOBAL_ADMIN" } | { type: "country_leads" } | { type: "emails", addresses: [...] }
+  subject     String   // Email subject with {{placeholders}}
+  bodyHtml    String   @db.Text // Email HTML body with {{placeholders}}
+  isActive    Boolean  @default(true)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── NOTIFICATION LOG ───────────────────────
+
+model NotificationLog {
+  id         String   @id @default(cuid())
+  ruleId     String?
+  ruleName   String
+  trigger    String
+  recipient  String   // email address
+  subject    String
+  status     String   // "sent" | "failed" | "skipped"
+  error      String?
+  assetId    String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([ruleId])
 }
